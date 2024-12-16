@@ -73,7 +73,7 @@ The Sign Language Recognition projects use hand detection and a pre-trained mode
 
 ```sh
 git clone https://github.com/prabinpanta0/Ismt-Expo.git
-cd eye-controlled-games
+cd Ismt-Expo
 ```
 
 2. Install the required packages:
