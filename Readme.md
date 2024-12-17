@@ -57,6 +57,8 @@ The MagicAI project uses a combination of computer vision and TensorFlow to crea
 
 The Sign Language Recognition projects use hand detection and a pre-trained model to recognize hand signs and display the corresponding letters on the screen.
 
+![Sign Language letters](<amer_sign2.png>)
+
 ## How to Run
 
 ### Prerequisites
