@@ -7,7 +7,7 @@ import mediapipe as mp
 pygame.init()
 
 # Screen dimensions
-WIDTH, HEIGHT = 320, 640
+WIDTH, HEIGHT = 256, 640
 BLOCK_SIZE = 32
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("Eye-Controlled Tetris")
@@ -46,7 +46,7 @@ class EyeTracker:
     def __init__(self):
         self.cap = cv2.VideoCapture(0)
         self.mp_face_mesh = mp.solutions.face_mesh
-        self.face_mesh = self.mp_face_mesh.FaceMesh()
+        self.face_mesh = self.mp_face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=1)
         self.prev_eyes_detected = True
         self.blink_detected = False
         self.blink_start_time = None
@@ -65,9 +65,18 @@ class EyeTracker:
                 left_eye_ratio = (face_landmarks.landmark[159].y - face_landmarks.landmark[145].y) / (face_landmarks.landmark[33].x - face_landmarks.landmark[133].x)
                 right_eye_ratio = (face_landmarks.landmark[386].y - face_landmarks.landmark[374].y) / (face_landmarks.landmark[362].x - face_landmarks.landmark[263].x)
                 blink_ratio = (left_eye_ratio + right_eye_ratio) / 2
+                if blink_ratio < 0.2:
+                    eyes_detected = False
+                else:
+                    eyes_detected = True
+
+                # Draw eye landmarks
+                for landmark in face_landmarks.landmark[33:133] + face_landmarks.landmark[362:263]:
+                    x = int(landmark.x * frame.shape[1])
+                    y = int(landmark.y * frame.shape[0])
+                    cv2.circle(frame, (x, y), 1, (0, 255, 0), -1)
 
                 nose_point = (face_landmarks.landmark[1].x * WIDTH, face_landmarks.landmark[1].y * HEIGHT)
-                eyes_detected = True
                 gaze_x = nose_point[0] / WIDTH
 
                 if self.prev_eyes_detected and not eyes_detected:
@@ -82,12 +91,6 @@ class EyeTracker:
                 else:
                     self.blink_detected = False
                 self.prev_eyes_detected = eyes_detected
-
-                # Draw face and eye landmarks
-                for landmark in face_landmarks.landmark:
-                    x = int(landmark.x * frame.shape[1])
-                    y = int(landmark.y * frame.shape[0])
-                    cv2.circle(frame, (x, y), 1, (0, 255, 0), -1)
 
         cv2.imshow('Eye Tracking', cv2.resize(frame, (400, 300)))
         cv2.waitKey(1)
