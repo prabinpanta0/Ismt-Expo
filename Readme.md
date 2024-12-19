@@ -63,7 +63,7 @@ The Sign Language Recognition projects use hand detection and a pre-trained mode
 
 ### Prerequisites
 
-- Python 3.7 or higher
+- [Python 3.12.4](https://www.python.org/downloads/release/python-3124/)
 - OpenCV
 - Pygame
 - Mediapipe
