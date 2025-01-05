@@ -3,7 +3,7 @@ import numpy as np
 from tensorflow.keras.models import load_model
 
 # Load the pre-trained model
-model = load_model('sign_language_mnist_model.h5')
+model = load_model('sign_language.h5')
 
 # Define a dictionary to map class indices to letters (A-Y excluding J)
 class_map = {i: chr(65 + i) if i < 9 else chr(66 + i) for i in range(24)}
