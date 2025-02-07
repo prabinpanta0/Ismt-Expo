@@ -32,13 +32,13 @@ GRID_HEIGHT = HEIGHT // BLOCK_SIZE
 
 # Shapes
 shapes = [
-    [[1, 1, 1, 1]],        # I
-    [[1, 1], [1, 1]],      # O
-    [[0, 1, 0], [1, 1, 1]], # T
-    [[1, 0, 0], [1, 1, 1]], # L
-    [[0, 0, 1], [1, 1, 1]], # J
-    [[1, 1, 0], [0, 1, 1]], # S
-    [[0, 1, 1], [1, 1, 0]], # Z
+    [[1, 1, 1, 1]],  # I
+    [[1, 1], [1, 1]],  # O
+    [[0, 1, 0], [1, 1, 1]],  # T
+    [[1, 0, 0], [1, 1, 1]],  # L
+    [[0, 0, 1], [1, 1, 1]],  # J
+    [[1, 1, 0], [0, 1, 1]],  # S
+    [[0, 1, 1], [1, 1, 0]],  # Z
 ]
 shape_colors = colors
 
@@ -47,67 +47,32 @@ class EyeTracker:
         self.cap = cv2.VideoCapture(0)
         self.mp_face_mesh = mp.solutions.face_mesh
         self.face_mesh = self.mp_face_mesh.FaceMesh(refine_landmarks=True, max_num_faces=1)
-        
+        self.prev_eyes_detected = True
+        self.blink_detected = False
+        self.blink_start_time = None
+
     def get_gaze_position(self):
         ret, frame = self.cap.read()
         if not ret:
             return None, frame
         frame = cv2.flip(frame, 1)
-        cam_h, cam_w = frame.shape[:2]
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = self.face_mesh.process(rgb_frame)
         gaze_x = None
-
-        # Use nose position for head control if detected.
+        eyes_detected = False
         if results.multi_face_landmarks:
             for face_landmarks in results.multi_face_landmarks:
-                # Nose landmark (commonly index 1)
-                nose = face_landmarks.landmark[1]
-                nose_x = nose.x  # normalized coordinate between 0 and 1
-                gaze_x = nose_x
-
-                # Draw markers for eyes and nose
-                left_eye = face_landmarks.landmark[159]
-                right_eye = face_landmarks.landmark[386]
-                # Convert landmarks to pixel coordinates:
-                left_eye_px = (int(left_eye.x * cam_w), int(left_eye.y * cam_h))
-                right_eye_px = (int(right_eye.x * cam_w), int(right_eye.y * cam_h))
-                nose_px = (int(nose.x * cam_w), int(nose.y * cam_h))
-                cv2.circle(frame, left_eye_px, 5, (0, 0, 255), -1)  # red for left eye
-                cv2.circle(frame, right_eye_px, 5, (0, 0, 255), -1) # red for right eye
-                cv2.circle(frame, nose_px, 5, (255, 0, 0), -1)        # blue for nose
-
-                # Also, calculate blink ratio for reference (optional)
-                left_eye_ratio = (face_landmarks.landmark[159].y - face_landmarks.landmark[145].y) / (
-                                    face_landmarks.landmark[33].x - face_landmarks.landmark[133].x)
-                right_eye_ratio = (face_landmarks.landmark[386].y - face_landmarks.landmark[374].y) / (
-                                    face_landmarks.landmark[362].x - face_landmarks.landmark[263].x)
+                left_eye_ratio = (face_landmarks.landmark[159].y - face_landmarks.landmark[145].y) / (face_landmarks.landmark[33].x - face_landmarks.landmark[133].x)
+                right_eye_ratio = (face_landmarks.landmark[386].y - face_landmarks.landmark[374].y) / (face_landmarks.landmark[362].x - face_landmarks.landmark[263].x)
                 blink_ratio = (left_eye_ratio + right_eye_ratio) / 2
-                # Draw blink ratio on camera feed
-                cv2.putText(frame, f"Blink:{blink_ratio:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                            1, (0, 255, 255), 2)
-                break  # use first detected face
-
-        # Fall back to mouse control if no face detected
-        if gaze_x is None:
-            mouse_x = pygame.mouse.get_pos()[0]
-            gaze_x = mouse_x / float(WIDTH)
-
-        # --- Overlay grid and gaze marker on camera frame ---
-        gaze_pixel = int(gaze_x * cam_w)
-        cv2.line(frame, (gaze_pixel, 0), (gaze_pixel, cam_h), (0, 255, 0), 2)
-        num_vert = 4
-        num_horz = 4
-        for i in range(1, num_vert):
-            cv2.line(frame, (int(i * cam_w / num_vert), 0), (int(i * cam_w / num_vert), cam_h), (255, 255, 255), 1)
-        for i in range(1, num_horz):
-            cv2.line(frame, (0, int(i * cam_h / num_horz)), (cam_w, int(i * cam_h / num_horz)), (255, 255, 255), 1)
-        # --------------------------------
+                eyes_detected = blink_ratio >= 0.2
+        # For simplicity, we simulate gaze_x from the mouse position when available
+        mouse_x = pygame.mouse.get_pos()[0]
+        gaze_x = mouse_x / float(WIDTH)
         return gaze_x, frame
 
     def is_blink(self):
-        # For demo purposes, simulate blink with spacebar press.
-        # Use rising edge detection externally.
+        # For demo purpose, simulate blink with spacebar press
         keys = pygame.key.get_pressed()
         return keys[pygame.K_SPACE]
 
@@ -147,17 +112,15 @@ def valid_space(shape, grid, offset):
 
 def clear_rows(grid, locked_positions):
     lines_cleared = 0
-    # Iterate from bottom to top
-    for y in range(GRID_HEIGHT - 1, -1, -1):
+    for y in range(GRID_HEIGHT-1, -1, -1):
         if BLACK not in grid[y]:
             lines_cleared += 1
-            # Remove the full row from locked positions
             for x in range(GRID_WIDTH):
                 try:
                     del locked_positions[(x, y)]
-                except KeyError:
+                except:
                     continue
-            # Shift every row above down by one
+            # Shift rows downward
             for key in sorted(list(locked_positions), key=lambda k: k[1], reverse=True):
                 x, y_pos = key
                 if y_pos < y:
@@ -216,10 +179,9 @@ def main():
     score = 0
     level = 1
     lines_cleared_total = 0
-    paused = False
-    game_over = False
+    
     running = True
-    prev_blink = False  # for rising-edge blink detection
+    game_over = False
 
     while running:
         grid = create_grid(locked_positions)
@@ -230,49 +192,36 @@ def main():
             if event.type == pygame.QUIT:
                 running = False
 
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_p:
-                    paused = not paused
-                elif event.key == pygame.K_q:
-                    running = False
-                elif event.key == pygame.K_r and game_over:
-                    # Restart game after game over
-                    game_over = False
-                    locked_positions = {}
-                    grid = create_grid(locked_positions)
-                    current_piece = Piece(random.choice(shapes))
-                    next_piece = Piece(random.choice(shapes))
-                    score = 0
-                    level = 1
-                    lines_cleared_total = 0
-                    fall_speed = 500
-
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                # Rotate piece on mouse click
-                new_shape = current_piece.rotate()
-                if valid_space(new_shape, grid, (current_piece.x, current_piece.y)):
-                    current_piece.shape = new_shape
-
-        if paused:
+        # Game Over screen
+        if game_over:
             screen.fill(BLACK)
-            draw_text_middle(screen, "PAUSED", 40, WHITE)
+            draw_text_middle(screen, "GAME OVER", 40, WHITE)
             pygame.display.update()
-            continue
+            pygame.time.delay(1500)
+            # Reset game variables
+            locked_positions = {}
+            grid = create_grid(locked_positions)
+            current_piece = Piece(random.choice(shapes))
+            next_piece = Piece(random.choice(shapes))
+            score = 0
+            level = 1
+            lines_cleared_total = 0
+            fall_speed = 500
+            game_over = False
 
-        # --- Head (gaze) control ---
-        gaze_x, cam_frame = eye_tracker.get_gaze_position()
+        # Eye control input (simulate via mouse)
+        gaze_x, _ = eye_tracker.get_gaze_position()
         if gaze_x is not None:
             target_x = int(gaze_x * GRID_WIDTH)
             if valid_space(current_piece.shape, grid, (target_x, current_piece.y)):
                 current_piece.x = target_x
 
-        # --- Rotate on blink using rising edge of spacebar ---
-        blink_now = eye_tracker.is_blink()
-        if blink_now and not prev_blink:
+        # Check for blink to rotate piece
+        if eye_tracker.is_blink():
             new_shape = current_piece.rotate()
+            # Only update if rotation is valid
             if valid_space(new_shape, grid, (current_piece.x, current_piece.y)):
                 current_piece.shape = new_shape
-        prev_blink = blink_now
 
         # Piece falling
         if fall_time > fall_speed:
@@ -280,7 +229,7 @@ def main():
             if valid_space(current_piece.shape, grid, (current_piece.x, current_piece.y + 1)):
                 current_piece.y += 1
             else:
-                # Lock piece into grid
+                # Lock piece
                 for y, row in enumerate(current_piece.shape):
                     for x, cell in enumerate(row):
                         if cell:
@@ -292,34 +241,12 @@ def main():
                     lines_cleared_total += cleared
                     level = lines_cleared_total // 10 + 1
                     fall_speed = max(100, 500 - (level - 1) * 50)
+                # Spawn next piece
                 current_piece = next_piece
                 next_piece = Piece(random.choice(shapes))
+                # Check game over
                 if not valid_space(current_piece.shape, grid, (current_piece.x, current_piece.y)):
                     game_over = True
-
-        # Game Over: show screen until restart key is pressed.
-        if game_over:
-            while game_over:
-                screen.fill(BLACK)
-                draw_text_middle(screen, "GAME OVER", 40, WHITE)
-                draw_text_middle(screen, "Press R to Restart", 20, WHITE)
-                pygame.display.update()
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        game_over = False
-                        running = False
-                    if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-                        game_over = False
-                        locked_positions = {}
-                        grid = create_grid(locked_positions)
-                        current_piece = Piece(random.choice(shapes))
-                        next_piece = Piece(random.choice(shapes))
-                        score = 0
-                        level = 1
-                        lines_cleared_total = 0
-                        fall_speed = 500
-                clock.tick(5)
-            continue
 
         # Draw locked pieces into grid
         for y in range(GRID_HEIGHT):
@@ -329,13 +256,8 @@ def main():
         draw_grid(screen, grid)
         draw_next_piece(screen, next_piece)
         draw_score(screen, score, level, lines_cleared_total)
-        draw_piece(screen, current_piece)
+        draw_piece(screen, current_piece)  # Draw the falling piece
         pygame.display.update()
-
-        # Show the camera feed with overlays in an OpenCV window
-        cv2.imshow("Camera Feed", cam_frame)
-        if cv2.waitKey(1) & 0xFF == 27:
-            running = False
 
     eye_tracker.release()
     pygame.quit()

@@ -61,29 +61,25 @@ class EyeTracker:
         # Use nose position for head control if detected.
         if results.multi_face_landmarks:
             for face_landmarks in results.multi_face_landmarks:
-                # Nose landmark (commonly index 1)
                 nose = face_landmarks.landmark[1]
-                nose_x = nose.x  # normalized coordinate between 0 and 1
-                gaze_x = nose_x
+                gaze_x = nose.x  # normalized coordinate between 0 and 1
 
                 # Draw markers for eyes and nose
                 left_eye = face_landmarks.landmark[159]
                 right_eye = face_landmarks.landmark[386]
-                # Convert landmarks to pixel coordinates:
                 left_eye_px = (int(left_eye.x * cam_w), int(left_eye.y * cam_h))
                 right_eye_px = (int(right_eye.x * cam_w), int(right_eye.y * cam_h))
                 nose_px = (int(nose.x * cam_w), int(nose.y * cam_h))
-                cv2.circle(frame, left_eye_px, 5, (0, 0, 255), -1)  # red for left eye
-                cv2.circle(frame, right_eye_px, 5, (0, 0, 255), -1) # red for right eye
-                cv2.circle(frame, nose_px, 5, (255, 0, 0), -1)        # blue for nose
+                cv2.circle(frame, left_eye_px, 5, (0, 0, 255), -1)
+                cv2.circle(frame, right_eye_px, 5, (0, 0, 255), -1)
+                cv2.circle(frame, nose_px, 5, (255, 0, 0), -1)
 
-                # Also, calculate blink ratio for reference (optional)
+                # Calculate and show blink ratio (for reference)
                 left_eye_ratio = (face_landmarks.landmark[159].y - face_landmarks.landmark[145].y) / (
                                     face_landmarks.landmark[33].x - face_landmarks.landmark[133].x)
                 right_eye_ratio = (face_landmarks.landmark[386].y - face_landmarks.landmark[374].y) / (
                                     face_landmarks.landmark[362].x - face_landmarks.landmark[263].x)
                 blink_ratio = (left_eye_ratio + right_eye_ratio) / 2
-                # Draw blink ratio on camera feed
                 cv2.putText(frame, f"Blink:{blink_ratio:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
                             1, (0, 255, 255), 2)
                 break  # use first detected face
@@ -93,21 +89,15 @@ class EyeTracker:
             mouse_x = pygame.mouse.get_pos()[0]
             gaze_x = mouse_x / float(WIDTH)
 
-        # --- Overlay grid and gaze marker on camera frame ---
+        # Overlay grid and gaze marker on camera frame
         gaze_pixel = int(gaze_x * cam_w)
         cv2.line(frame, (gaze_pixel, 0), (gaze_pixel, cam_h), (0, 255, 0), 2)
-        num_vert = 4
-        num_horz = 4
-        for i in range(1, num_vert):
-            cv2.line(frame, (int(i * cam_w / num_vert), 0), (int(i * cam_w / num_vert), cam_h), (255, 255, 255), 1)
-        for i in range(1, num_horz):
-            cv2.line(frame, (0, int(i * cam_h / num_horz)), (cam_w, int(i * cam_h / num_horz)), (255, 255, 255), 1)
-        # --------------------------------
+        for i in range(1, 4):
+            cv2.line(frame, (int(i * cam_w / 4), 0), (int(i * cam_w / 4), cam_h), (255, 255, 255), 1)
+            cv2.line(frame, (0, int(i * cam_h / 4)), (cam_w, int(i * cam_h / 4)), (255, 255, 255), 1)
         return gaze_x, frame
 
     def is_blink(self):
-        # For demo purposes, simulate blink with spacebar press.
-        # Use rising edge detection externally.
         keys = pygame.key.get_pressed()
         return keys[pygame.K_SPACE]
 
@@ -125,6 +115,17 @@ class Piece:
     def rotate(self):
         rotated = [list(row) for row in zip(*self.shape[::-1])]
         return rotated
+
+def attempt_rotation(piece, grid):
+    new_shape = piece.rotate()
+    if valid_space(new_shape, grid, (piece.x, piece.y)):
+        return new_shape
+    # Try small offsets left and right (wall kick)
+    for dx in [-1, 1]:
+        if valid_space(new_shape, grid, (piece.x + dx, piece.y)):
+            piece.x += dx
+            return new_shape
+    return piece.shape
 
 def create_grid(locked_positions={}):
     grid = [[BLACK for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
@@ -147,17 +148,14 @@ def valid_space(shape, grid, offset):
 
 def clear_rows(grid, locked_positions):
     lines_cleared = 0
-    # Iterate from bottom to top
     for y in range(GRID_HEIGHT - 1, -1, -1):
         if BLACK not in grid[y]:
             lines_cleared += 1
-            # Remove the full row from locked positions
             for x in range(GRID_WIDTH):
                 try:
                     del locked_positions[(x, y)]
                 except KeyError:
                     continue
-            # Shift every row above down by one
             for key in sorted(list(locked_positions), key=lambda k: k[1], reverse=True):
                 x, y_pos = key
                 if y_pos < y:
@@ -168,11 +166,14 @@ def draw_grid(surface, grid):
     surface.fill(BLACK)
     for y in range(len(grid)):
         for x in range(len(grid[y])):
-            pygame.draw.rect(surface, grid[y][x], (x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE), 0)
+            pygame.draw.rect(surface, grid[y][x],
+                             (x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE), 0)
     for x in range(GRID_WIDTH):
-        pygame.draw.line(surface, WHITE, (x * BLOCK_SIZE, 0), (x * BLOCK_SIZE, HEIGHT))
+        pygame.draw.line(surface, WHITE, (x * BLOCK_SIZE, 0),
+                         (x * BLOCK_SIZE, HEIGHT))
     for y in range(GRID_HEIGHT):
-        pygame.draw.line(surface, WHITE, (0, y * BLOCK_SIZE), (WIDTH, y * BLOCK_SIZE))
+        pygame.draw.line(surface, WHITE, (0, y * BLOCK_SIZE),
+                         (WIDTH, y * BLOCK_SIZE))
 
 def draw_next_piece(surface, piece):
     font = pygame.font.SysFont('Arial', 20)
@@ -181,7 +182,8 @@ def draw_next_piece(surface, piece):
     for y, row in enumerate(piece.shape):
         for x, cell in enumerate(row):
             if cell:
-                pygame.draw.rect(surface, piece.color, (WIDTH + 10 + x * BLOCK_SIZE, 40 + y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE), 0)
+                pygame.draw.rect(surface, piece.color,
+                                 (WIDTH + 10 + x * BLOCK_SIZE, 40 + y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE), 0)
 
 def draw_score(surface, score, level, lines):
     font = pygame.font.SysFont('Arial', 20)
@@ -195,14 +197,17 @@ def draw_score(surface, score, level, lines):
 def draw_text_middle(surface, text, size, color):
     font = pygame.font.SysFont('Arial', size)
     label = font.render(text, True, color)
-    surface.blit(label, (WIDTH // 2 - label.get_width() // 2, HEIGHT // 2 - label.get_height() // 2))
+    surface.blit(label, (WIDTH // 2 - label.get_width() // 2,
+                          HEIGHT // 2 - label.get_height() // 2))
 
 def draw_piece(surface, piece):
     for y, row in enumerate(piece.shape):
         for x, cell in enumerate(row):
             if cell:
                 pygame.draw.rect(surface, piece.color,
-                                 ((piece.x + x) * BLOCK_SIZE, (piece.y + y) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE), 0)
+                                 ((piece.x + x) * BLOCK_SIZE,
+                                  (piece.y + y) * BLOCK_SIZE,
+                                  BLOCK_SIZE, BLOCK_SIZE), 0)
 
 def main():
     clock = pygame.time.Clock()
@@ -236,7 +241,6 @@ def main():
                 elif event.key == pygame.K_q:
                     running = False
                 elif event.key == pygame.K_r and game_over:
-                    # Restart game after game over
                     game_over = False
                     locked_positions = {}
                     grid = create_grid(locked_positions)
@@ -248,10 +252,8 @@ def main():
                     fall_speed = 500
 
             if event.type == pygame.MOUSEBUTTONDOWN:
-                # Rotate piece on mouse click
-                new_shape = current_piece.rotate()
-                if valid_space(new_shape, grid, (current_piece.x, current_piece.y)):
-                    current_piece.shape = new_shape
+                new_shape = attempt_rotation(current_piece, grid)
+                current_piece.shape = new_shape
 
         if paused:
             screen.fill(BLACK)
@@ -269,9 +271,8 @@ def main():
         # --- Rotate on blink using rising edge of spacebar ---
         blink_now = eye_tracker.is_blink()
         if blink_now and not prev_blink:
-            new_shape = current_piece.rotate()
-            if valid_space(new_shape, grid, (current_piece.x, current_piece.y)):
-                current_piece.shape = new_shape
+            new_shape = attempt_rotation(current_piece, grid)
+            current_piece.shape = new_shape
         prev_blink = blink_now
 
         # Piece falling
@@ -280,12 +281,10 @@ def main():
             if valid_space(current_piece.shape, grid, (current_piece.x, current_piece.y + 1)):
                 current_piece.y += 1
             else:
-                # Lock piece into grid
                 for y, row in enumerate(current_piece.shape):
                     for x, cell in enumerate(row):
                         if cell:
                             locked_positions[(current_piece.x + x, current_piece.y + y)] = current_piece.color
-                # Clear rows and update score/level
                 cleared = clear_rows(grid, locked_positions)
                 if cleared > 0:
                     score += cleared * 10
@@ -297,7 +296,7 @@ def main():
                 if not valid_space(current_piece.shape, grid, (current_piece.x, current_piece.y)):
                     game_over = True
 
-        # Game Over: show screen until restart key is pressed.
+        # Game Over screen
         if game_over:
             while game_over:
                 screen.fill(BLACK)
@@ -321,7 +320,6 @@ def main():
                 clock.tick(5)
             continue
 
-        # Draw locked pieces into grid
         for y in range(GRID_HEIGHT):
             for x in range(GRID_WIDTH):
                 if (x, y) in locked_positions:
@@ -332,7 +330,6 @@ def main():
         draw_piece(screen, current_piece)
         pygame.display.update()
 
-        # Show the camera feed with overlays in an OpenCV window
         cv2.imshow("Camera Feed", cam_frame)
         if cv2.waitKey(1) & 0xFF == 27:
             running = False
